@@ -41,6 +41,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ exists: videos.length > 0 })
     return false // 同步响应
   }
+
+  if (request.action === 'changeSpeed') {
+    const videos = document.getElementsByTagName('video')
+    if (videos.length > 0) {
+      videos[0].playbackRate = request.speed
+      // 存储当前播放速度
+      chrome.storage.local.set({ playbackSpeed: request.speed })
+    }
+  }
 })
 
 // 更新所有视频的播放速度
@@ -156,4 +165,29 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     updateAllVideoSpeeds(currentSpeed)
   }
+})
+
+// 添加 MutationObserver 来监听视频元素变化
+const videoObserver = new MutationObserver((mutations) => {
+  mutations.forEach((mutation) => {
+    if (mutation.addedNodes.length) {
+      const videos = document.getElementsByTagName('video')
+      if (videos.length > 0) {
+        // 获取存储的播放速度并应用
+        chrome.storage.local.get(['playbackSpeed'], function (result) {
+          if (result.playbackSpeed) {
+            videos[0].playbackRate = result.playbackSpeed
+          }
+        })
+      }
+    }
+  })
+})
+
+// 在页面加载时开始观察
+document.addEventListener('DOMContentLoaded', () => {
+  videoObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  })
 })
