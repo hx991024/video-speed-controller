@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        width: 280px;
+        padding: 16px;
+        margin: 0;
+        font-family: Arial, sans-serif;
+      }
+
+      .reset-button {
+        width: 100%;
+        margin-bottom: 16px;
+        background: none;
+        border: none;
+        padding: 10px 0;
+        cursor: pointer;
+        font-size: 15px;
+        border-radius: 6px;
+        transition: all 0.2s;
+      }
+
+      .reset-button:hover {
+        background-color: rgba(0, 0, 0, 0.05);
+      }
+
+      .preset-speeds {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .preset-speeds button {
+        background: none;
+        border: none;
+        padding: 12px 0;
+        cursor: pointer;
+        width: 100%;
+        font-size: 15px;
+        border-radius: 6px;
+        transition: all 0.2s;
+      }
+
+      .preset-speeds button:hover {
+        background-color: rgba(0, 0, 0, 0.05);
+      }
+
+      .preset-speeds button.active {
+        background-color: rgba(0, 0, 0, 0.1);
+        font-weight: 500;
+      }
+
+      .custom-speed {
+        display: grid;
+        grid-template-columns: 45px 40px 1fr 40px 45px;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .stepper-btn {
+        background: none;
+        border: none;
+        border-radius: 6px;
+        height: 36px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 15px;
+        padding: 0;
+        transition: all 0.2s;
+      }
+
+      .stepper-btn:hover {
+        background-color: rgba(0, 0, 0, 0.05);
+      }
+
+      .stepper-btn svg {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: #666;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .stepper-btn.fast-step svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      #customSpeedInput {
+        padding: 8px;
+        border: none;
+        background: rgba(0, 0, 0, 0.05);
+        border-radius: 6px;
+        width: 100%;
+        height: 36px;
+        box-sizing: border-box;
+        text-align: center;
+        font-size: 15px;
+      }
+
+      #customSpeedInput::-webkit-outer-spin-button,
+      #customSpeedInput::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+
+      /* 添加按钮点击效果 */
+      .stepper-btn:active,
+      .preset-speeds button:active,
+      .reset-button:active {
+        transform: translateY(1px);
+        background-color: rgba(0, 0, 0, 0.1);
+      }
+    </style>
+  </head>
+  <body>
+    <button class="reset-button">重置</button>
+    <div class="preset-speeds">
+      <button data-speed="0.5">0.5x</button>
+      <button data-speed="0.75">0.75x</button>
+      <button data-speed="1">1.0x</button>
+      <button data-speed="1.25">1.25x</button>
+      <button data-speed="1.5">1.5x</button>
+      <button data-speed="2">2.0x</button>
+      <button data-speed="3">3.0x</button>
+    </div>
+    <div class="custom-speed">
+      <button class="stepper-btn fast-step decrease-fast">
+        <svg viewBox="0 0 24 24">
+          <path d="M18 17L13 12L18 7M11 17L6 12L11 7"></path>
+        </svg>
+      </button>
+      <button class="stepper-btn decrease">
+        <svg viewBox="0 0 24 24">
+          <path d="M15 18L9 12L15 6"></path>
+        </svg>
+      </button>
+      <input
+        type="number"
+        id="customSpeedInput"
+        step="0.1"
+        min="0.1"
+        max="16"
+        readonly
+      />
+      <button class="stepper-btn increase">
+        <svg viewBox="0 0 24 24">
+          <path d="M9 6L15 12L9 18"></path>
+        </svg>
+      </button>
+      <button class="stepper-btn fast-step increase-fast">
+        <svg viewBox="0 0 24 24">
+          <path d="M6 7L11 12L6 17M13 7L18 12L13 17"></path>
+        </svg>
+      </button>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>
