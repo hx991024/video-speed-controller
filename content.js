@@ -36,7 +36,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'hasVideo') {
-    // 检查页面是否有视频元素
+    // 检查页���是否有视频元素
     const videos = document.querySelectorAll('video')
     sendResponse({ exists: videos.length > 0 })
     return false // 同步响应
@@ -67,127 +67,90 @@ function applySpeedToVideo(video, speed) {
     video.removeEventListener('ratechange', video._speedHandler)
   }
 
-  // 重置playbackRate属性
-  try {
-    delete video.playbackRate
-    // 重新定义playbackRate属性
-    Object.defineProperty(video, 'playbackRate', {
-      configurable: true,
-      get: function () {
-        return speed
-      },
-      set: function (newValue) {
-        if (newValue !== speed) {
-          const originalSet = Object.getOwnPropertyDescriptor(
-            HTMLMediaElement.prototype,
-            'playbackRate'
-          ).set
-          originalSet.call(this, speed)
-        }
-      }
-    })
-  } catch (e) {
-    console.log('无法劫持playbackRate属性，使用备用方案')
-  }
-
-  // 设置初始速度
   const originalSet = Object.getOwnPropertyDescriptor(
     HTMLMediaElement.prototype,
     'playbackRate'
   ).set
+
+  // 设置初始速度
   originalSet.call(video, speed)
 
-  // 添加新的速度监听器
+  // 增强版速度监听器
   video._speedHandler = function (e) {
     if (this.playbackRate !== speed) {
       originalSet.call(this, speed)
     }
   }
-  video.addEventListener('ratechange', video._speedHandler)
 
-  // 添加播放事件监听器
-  video.addEventListener('play', function () {
-    if (this.playbackRate !== speed) {
-      originalSet.call(this, speed)
-    }
+  // 添加更全面的事件监听
+  const events = [
+    'ratechange',
+    'play',
+    'seeking',
+    'loadeddata',
+    'loadedmetadata',
+    'canplay'
+  ]
+  events.forEach((eventName) => {
+    video.addEventListener(eventName, video._speedHandler)
   })
 
-  // 添加seeking事件监听器
-  video.addEventListener('seeking', function () {
+  // 添加 timeupdate 监听以确保持续保持速度
+  video.addEventListener('timeupdate', function () {
     if (this.playbackRate !== speed) {
       originalSet.call(this, speed)
     }
   })
 }
 
-// 监听新添加的视频元素
+// 优化后的 MutationObserver
 const observer = new MutationObserver((mutations) => {
+  let videoFound = false
   mutations.forEach((mutation) => {
     mutation.addedNodes.forEach((node) => {
       if (node.nodeName === 'VIDEO') {
+        videoFound = true
         applySpeedToVideo(node, currentSpeed)
-        // 通知background更新badge
-        chrome.runtime.sendMessage({
-          action: 'speedUpdated',
-          speed: currentSpeed
-        })
+      } else if (node.querySelectorAll) {
+        const videos = node.querySelectorAll('video')
+        if (videos.length > 0) {
+          videoFound = true
+          videos.forEach((video) => applySpeedToVideo(video, currentSpeed))
+        }
       }
     })
   })
-})
 
-observer.observe(document.body, {
-  childList: true,
-  subtree: true
-})
-
-// 初始检查是否存在视频
-if (document.querySelectorAll('video').length > 0) {
-  chrome.runtime.sendMessage({ action: 'speedUpdated', speed: currentSpeed })
-}
-
-// 定期检查并强制更新视频速度
-setInterval(() => {
-  const videos = document.querySelectorAll('video')
-  videos.forEach((video) => {
-    if (video.playbackRate !== currentSpeed) {
-      const originalSet = Object.getOwnPropertyDescriptor(
-        HTMLMediaElement.prototype,
-        'playbackRate'
-      ).set
-      originalSet.call(video, currentSpeed)
-    }
-  })
-}, 1000)
-
-// 页面可见性改变时重新应用速度设置
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
-    updateAllVideoSpeeds(currentSpeed)
+  if (videoFound) {
+    // 通知 background 更新 badge
+    chrome.runtime.sendMessage({
+      action: 'speedUpdated',
+      speed: currentSpeed
+    })
   }
 })
 
-// 添加 MutationObserver 来监听视频元素变化
-const videoObserver = new MutationObserver((mutations) => {
-  mutations.forEach((mutation) => {
-    if (mutation.addedNodes.length) {
-      const videos = document.getElementsByTagName('video')
-      if (videos.length > 0) {
-        // 获取存储的播放速度并应用
-        chrome.storage.local.get(['playbackSpeed'], function (result) {
-          if (result.playbackSpeed) {
-            videos[0].playbackRate = result.playbackSpeed
-          }
-        })
-      }
-    }
-  })
+// 配置 observer 以捕获更多变化
+observer.observe(document.body, {
+  childList: true,
+  subtree: true,
+  attributes: true,
+  attributeFilter: ['src', 'currentSrc']
 })
 
-// 在页面加载时开始观察
-document.addEventListener('DOMContentLoaded', () => {
-  videoObserver.observe(document.body, {
-    childList: true,
-    subtree: true
+// 优化检查间隔时间，并添加更多检查逻辑
+setInterval(() => {
+  const videos = document.querySelectorAll('video')
+  videos.forEach((video) => {
+    if (!video._speedHandler || video.playbackRate !== currentSpeed) {
+      applySpeedToVideo(video, currentSpeed)
+    }
   })
+}, 500) // 缩短间隔时间以提高响应速度
+
+// 页面可见性变化时的处理
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    setTimeout(() => updateAllVideoSpeeds(currentSpeed), 100)
+  }
 })
