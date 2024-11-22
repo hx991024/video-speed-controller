@@ -36,7 +36,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'hasVideo') {
-    // 检查页���是否有视频元素
+    // 检查是否有视频元素
     const videos = document.querySelectorAll('video')
     sendResponse({ exists: videos.length > 0 })
     return false // 同步响应
@@ -75,17 +75,34 @@ function applySpeedToVideo(video, speed) {
   // 设置初始速度
   originalSet.call(video, speed)
 
-  // 增强版速度监听器
+  // 修改速度监听器逻辑
   video._speedHandler = function (e) {
-    if (this.playbackRate !== speed) {
-      originalSet.call(this, speed)
+    // 只在非用户手动修改的情况下应用速度
+    if (e.type !== 'ratechange') {
+      if (this.playbackRate !== speed) {
+        originalSet.call(this, speed)
+      }
+    } else {
+      // 如果是用户手动修改速度，更新 currentSpeed
+      currentSpeed = this.playbackRate
+      // 保存新的速度设置
+      chrome.storage.local
+        .set({
+          [window.location.hostname]: currentSpeed
+        })
+        .then(() => {
+          // 通知 background 更新 badge
+          chrome.runtime.sendMessage({
+            action: 'speedUpdated',
+            speed: currentSpeed
+          })
+        })
     }
   }
 
-  // 添加更全面的事件监听
+  // 移除 play 事件，只保留必要的事件监听
   const events = [
     'ratechange',
-    'play',
     'seeking',
     'loadeddata',
     'loadedmetadata',
@@ -95,11 +112,9 @@ function applySpeedToVideo(video, speed) {
     video.addEventListener(eventName, video._speedHandler)
   })
 
-  // 添加 timeupdate 监听以确保持续保持速度
+  // 修改 timeupdate 监听逻辑
   video.addEventListener('timeupdate', function () {
-    if (this.playbackRate !== speed) {
-      originalSet.call(this, speed)
-    }
+    // 不再强制设置速度，让用户的手动设置优先
   })
 }
 
