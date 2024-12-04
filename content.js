@@ -169,3 +169,25 @@ document.addEventListener('visibilitychange', () => {
     setTimeout(() => updateAllVideoSpeeds(currentSpeed), 100)
   }
 })
+
+// 添加消息监听器
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'getSpeed') {
+    // 返回当前视频速度
+    const video = document.querySelector('video')
+    sendResponse({ speed: video ? video.playbackRate : 1.0 })
+  } else if (request.action === 'setSpeed') {
+    // 设置视频速度
+    const videos = document.querySelectorAll('video')
+    videos.forEach((video) => {
+      applySpeedToVideo(video, request.speed)
+    })
+    // 通知 background 更新 badge
+    chrome.runtime.sendMessage({
+      action: 'speedUpdated',
+      speed: request.speed
+    })
+    sendResponse({ success: true })
+  }
+  return true // 保持消息通道开启
+})
