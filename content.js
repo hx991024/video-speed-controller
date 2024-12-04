@@ -108,7 +108,6 @@ function applySpeedToVideo(video, speed) {
           [window.location.hostname]: currentSpeed
         })
         .then(() => {
-          // 使用新的包装函数
           sendMessageToBackground({
             action: 'speedUpdated',
             speed: currentSpeed
@@ -117,21 +116,58 @@ function applySpeedToVideo(video, speed) {
     }
   }
 
-  // 移除 play 事件，只保留必要的事件监听
+  // 添加 loadstart 事件监听，在视频源改变时应用速度
+  video.addEventListener('loadstart', function () {
+    setTimeout(() => {
+      if (this.playbackRate !== speed) {
+        originalSet.call(this, speed)
+      }
+    }, 100)
+  })
+
+  // 观察视频元素的属性变化
+  const srcObserver = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (
+        mutation.type === 'attributes' &&
+        (mutation.attributeName === 'src' ||
+          mutation.attributeName === 'currentSrc')
+      ) {
+        setTimeout(() => {
+          if (video.playbackRate !== speed) {
+            originalSet.call(video, speed)
+          }
+        }, 100)
+      }
+    })
+  })
+
+  srcObserver.observe(video, {
+    attributes: true,
+    attributeFilter: ['src', 'currentSrc']
+  })
+
+  // 监听播放状态变化
+  video.addEventListener('play', function () {
+    setTimeout(() => {
+      if (this.playbackRate !== speed) {
+        originalSet.call(this, speed)
+      }
+    }, 100)
+  })
+
+  // 修改事件监听列表，添加更多触发点
   const events = [
     'ratechange',
     'seeking',
     'loadeddata',
     'loadedmetadata',
-    'canplay'
+    'canplay',
+    'play',
+    'playing'
   ]
   events.forEach((eventName) => {
     video.addEventListener(eventName, video._speedHandler)
-  })
-
-  // 修改 timeupdate 监听逻辑
-  video.addEventListener('timeupdate', function () {
-    // 不再强制设置速度，让用户的手动设置优先
   })
 }
 
@@ -169,16 +205,6 @@ observer.observe(document.body, {
   attributes: true,
   attributeFilter: ['src', 'currentSrc']
 })
-
-// 优化检查间隔时间，并添加更多检查逻辑
-setInterval(() => {
-  const videos = document.querySelectorAll('video')
-  videos.forEach((video) => {
-    if (!video._speedHandler || video.playbackRate !== currentSpeed) {
-      applySpeedToVideo(video, currentSpeed)
-    }
-  })
-}, 500) // 缩短间隔时间以提高响应速度
 
 // 页面可见性变化时的处理
 document.addEventListener('visibilitychange', () => {
