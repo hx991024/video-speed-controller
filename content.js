@@ -9,6 +9,23 @@ chrome.storage.local.get([window.location.hostname], function (result) {
   }
 })
 
+// 添加一个包装函数来处理消息发送
+function sendMessageToBackground(message) {
+  try {
+    chrome.runtime.sendMessage(message, (response) => {
+      if (chrome.runtime.lastError) {
+        console.log('发送消息时出错:', chrome.runtime.lastError.message)
+      }
+    })
+  } catch (error) {
+    console.log('发送消息失败:', error)
+    // 如果扩展已失效，尝试重新加载页面
+    if (error.message.includes('Extension context invalidated')) {
+      console.log('扩展已重新加载，请刷新页面')
+    }
+  }
+}
+
 // 监听来自popup和background的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'setSpeed') {
@@ -20,8 +37,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         [window.location.hostname]: currentSpeed
       })
       .then(() => {
-        // 通知background更新badge
-        chrome.runtime.sendMessage({
+        // 使用新的包装函数
+        sendMessageToBackground({
           action: 'speedUpdated',
           speed: currentSpeed
         })
@@ -91,8 +108,8 @@ function applySpeedToVideo(video, speed) {
           [window.location.hostname]: currentSpeed
         })
         .then(() => {
-          // 通知 background 更新 badge
-          chrome.runtime.sendMessage({
+          // 使用新的包装函数
+          sendMessageToBackground({
             action: 'speedUpdated',
             speed: currentSpeed
           })
@@ -137,8 +154,8 @@ const observer = new MutationObserver((mutations) => {
   })
 
   if (videoFound) {
-    // 通知 background 更新 badge
-    chrome.runtime.sendMessage({
+    // 使用新的包装函数
+    sendMessageToBackground({
       action: 'speedUpdated',
       speed: currentSpeed
     })
@@ -182,8 +199,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     videos.forEach((video) => {
       applySpeedToVideo(video, request.speed)
     })
-    // 通知 background 更新 badge
-    chrome.runtime.sendMessage({
+    // 使用新的包装函数
+    sendMessageToBackground({
       action: 'speedUpdated',
       speed: request.speed
     })
