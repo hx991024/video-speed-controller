@@ -75,6 +75,11 @@ function updateAllVideoSpeeds(speed) {
   videos.forEach((video) => {
     applySpeedToVideo(video, speed)
   })
+
+  // 每次更新速度后都保存到 storage
+  chrome.storage.local.set({
+    [window.location.hostname]: speed
+  })
 }
 
 // 为单个视频应用速度设置
@@ -220,17 +225,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const video = document.querySelector('video')
     sendResponse({ speed: video ? video.playbackRate : 1.0 })
   } else if (request.action === 'setSpeed') {
-    // 设置视频速度
-    const videos = document.querySelectorAll('video')
-    videos.forEach((video) => {
-      applySpeedToVideo(video, request.speed)
-    })
-    // 使用新的包装函数
-    sendMessageToBackground({
-      action: 'speedUpdated',
-      speed: request.speed
-    })
-    sendResponse({ success: true })
+    // 更新当前速度
+    currentSpeed = request.speed
+    updateAllVideoSpeeds(currentSpeed)
+
+    // 如果是重置操作（速度为1.0），也要保存到storage
+    chrome.storage.local
+      .set({
+        [window.location.hostname]: currentSpeed // 保存当前域名对应的速度
+      })
+      .then(() => {
+        sendMessageToBackground({
+          action: 'speedUpdated',
+          speed: currentSpeed
+        })
+        sendResponse({ success: true })
+      })
+    return true
   }
   return true // 保持消息通道开启
 })
