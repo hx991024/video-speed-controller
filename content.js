@@ -4,7 +4,11 @@ let currentSpeed = 1.0
 // 更新所有视频的播放速度
 function updateAllVideoSpeeds(speed) {
   const videos = document.querySelectorAll('video')
-  videos.forEach((video) => applySpeedToVideo(video, speed))
+  videos.forEach((video) => {
+    if (!isLiveStream(video)) {
+      applySpeedToVideo(video, speed)
+    }
+  })
 }
 
 // 初始化时从存储中获取该页面的播放速度
@@ -147,6 +151,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // 为单个视频应用速度设置
 function applySpeedToVideo(video, speed) {
+  // 添加直播检测
+  if (isLiveStream(video)) {
+    console.log('检测到直播内容，保持原速播放')
+    return // 如果是直播内容，不修改播放速度
+  }
+
   // 清理所有之前的事件监听器
   const events = [
     'ratechange',
@@ -269,6 +279,18 @@ function applySpeedToVideo(video, speed) {
     video[`_${eventName}Handler`] = video._speedHandler
     video.addEventListener(eventName, video._speedHandler)
   })
+}
+
+// 添加直播检测函数
+function isLiveStream(video) {
+  // 检查是否为直播流的几个特征
+  return (
+    video.duration === Infinity || // 无限时长
+    video.duration === 0 || // 0 时长
+    video.seekable.length === 0 || // 不可跳转
+    (video.seekable.length > 0 &&
+      video.seekable.end(0) - video.seekable.start(0) < 1) // 可跳转范围小于1秒
+  )
 }
 
 // 优化后的 MutationObserver
