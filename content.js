@@ -1,6 +1,12 @@
 // 存储当前页面的播放速度
 let currentSpeed = 1.0
 
+// 更新所有视频的播放速度
+function updateAllVideoSpeeds(speed) {
+  const videos = document.querySelectorAll('video')
+  videos.forEach((video) => applySpeedToVideo(video, speed))
+}
+
 // 初始化时从存储中获取该页面的播放速度
 chrome.storage.local.get([window.location.hostname], function (result) {
   if (result[window.location.hostname]) {
@@ -9,85 +15,156 @@ chrome.storage.local.get([window.location.hostname], function (result) {
   }
 })
 
-// 添加一个包装函数来处理消息发送
-function sendMessageToBackground(message) {
-  try {
-    chrome.runtime.sendMessage(message, (response) => {
-      if (chrome.runtime.lastError) {
-        console.log('发送消息时出错:', chrome.runtime.lastError.message)
+// 添加重试机制的包装函数
+function sendMessageWithRetry(message, maxRetries = 3, delay = 1000) {
+  let retries = 0
+
+  function attemptSend() {
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          console.log('发送消息时出错:', chrome.runtime.lastError.message)
+          if (
+            retries < maxRetries &&
+            chrome.runtime.lastError.message.includes(
+              'Extension context invalidated'
+            )
+          ) {
+            retries++
+            setTimeout(attemptSend, delay)
+          }
+        }
+      })
+    } catch (error) {
+      console.log('发送消息失败:', error)
+      // 如果是扩展上下文失效，尝试重试
+      if (
+        retries < maxRetries &&
+        error.message.includes('Extension context invalidated')
+      ) {
+        retries++
+        setTimeout(attemptSend, delay)
       }
-    })
-  } catch (error) {
-    console.log('发送消息失败:', error)
-    // 如果扩展已失效，尝试重新加载页面
-    if (error.message.includes('Extension context invalidated')) {
-      console.log('扩展已重新加载，请刷新页面')
     }
   }
+
+  attemptSend()
 }
 
-// 监听来自popup和background的消息
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'setSpeed') {
-    currentSpeed = request.speed
-    updateAllVideoSpeeds(currentSpeed)
-    // 保存当前网站的播放速度
-    chrome.storage.local
-      .set({
-        [window.location.hostname]: currentSpeed
-      })
-      .then(() => {
-        // 使用新的包装函数
-        sendMessageToBackground({
-          action: 'speedUpdated',
-          speed: currentSpeed
+// 替换原有的 sendMessageToBackground 函数
+function sendMessageToBackground(message) {
+  sendMessageWithRetry(message)
+}
+
+// 添加存储操作的错误处理和重试机制
+function saveSpeedWithRetry(speed, maxRetries = 3, delay = 1000) {
+  let retries = 0
+
+  return new Promise((resolve, reject) => {
+    function attemptSave() {
+      chrome.storage.local
+        .set({
+          [window.location.hostname]: speed
         })
-        sendResponse({ success: true })
-      })
-    return true // 异步响应
-  }
-
-  if (request.action === 'getSpeed') {
-    sendResponse({ speed: currentSpeed })
-    return false // 同步响应
-  }
-
-  if (request.action === 'hasVideo') {
-    // 检查是否有视频元素
-    const videos = document.querySelectorAll('video')
-    sendResponse({ exists: videos.length > 0 })
-    return false // 同步响应
-  }
-
-  if (request.action === 'changeSpeed') {
-    const videos = document.getElementsByTagName('video')
-    if (videos.length > 0) {
-      videos[0].playbackRate = request.speed
-      // 存储当前播放速度
-      chrome.storage.local.set({ playbackSpeed: request.speed })
+        .then(() => {
+          resolve()
+        })
+        .catch((error) => {
+          console.error('保存速度设置失败:', error)
+          if (retries < maxRetries) {
+            retries++
+            setTimeout(attemptSave, delay)
+          } else {
+            reject(error)
+          }
+        })
     }
-  }
-})
 
-// 更新所有视频的播放速度
-function updateAllVideoSpeeds(speed) {
-  const videos = document.querySelectorAll('video')
-  videos.forEach((video) => {
-    applySpeedToVideo(video, speed)
-  })
-
-  // 每次更新速度后都保存到 storage
-  chrome.storage.local.set({
-    [window.location.hostname]: speed
+    attemptSave()
   })
 }
+
+// 合并所有消息监听逻辑到一个监听器中
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  try {
+    switch (request.action) {
+      case 'setSpeed':
+        currentSpeed = request.speed
+        updateAllVideoSpeeds(currentSpeed)
+        // 保存当前网站的播放速度
+        saveSpeedWithRetry(currentSpeed)
+          .then(() => {
+            sendMessageWithRetry({
+              action: 'speedUpdated',
+              speed: currentSpeed
+            })
+            sendResponse({ success: true })
+          })
+          .catch((error) => {
+            console.error('保存速度最终失败:', error)
+            sendResponse({ success: false, error: error.message })
+          })
+        return true // 异步响应
+
+      case 'getSpeed':
+        try {
+          const video = document.querySelector('video')
+          sendResponse({ speed: video ? video.playbackRate : currentSpeed })
+        } catch (error) {
+          console.error('获取速度失败:', error)
+          sendResponse({ speed: currentSpeed })
+        }
+        return false
+
+      case 'hasVideo':
+        try {
+          const videos = document.querySelectorAll('video')
+          sendResponse({ exists: videos.length > 0 })
+        } catch (error) {
+          console.error('检查视频存在失败:', error)
+          sendResponse({ exists: false })
+        }
+        return false
+
+      case 'changeSpeed':
+        try {
+          const targetVideos = document.getElementsByTagName('video')
+          if (targetVideos.length > 0) {
+            targetVideos[0].playbackRate = request.speed
+            saveSpeedWithRetry(request.speed)
+          }
+        } catch (error) {
+          console.error('改变速度失败:', error)
+        }
+        return false
+    }
+  } catch (error) {
+    console.error('消息处理失败:', error)
+    sendResponse({ error: error.message })
+  }
+  return true
+})
 
 // 为单个视频应用速度设置
 function applySpeedToVideo(video, speed) {
-  // 移除现有的速度监听器
-  if (video._speedHandler) {
-    video.removeEventListener('ratechange', video._speedHandler)
-  }
+  // 清理所有之前的事件监听器
+  const events = [
+    'ratechange',
+    'seeking',
+    'loadeddata',
+    'loadedmetadata',
+    'canplay',
+    'play',
+    'playing',
+    'loadstart'
+  ]
+
+  // 清理之前的所有事件监听器
+  events.forEach((eventName) => {
+    if (video[`_${eventName}Handler`]) {
+      video.removeEventListener(eventName, video[`_${eventName}Handler`])
+    }
+  })
 
   const originalSet = Object.getOwnPropertyDescriptor(
     HTMLMediaElement.prototype,
@@ -130,7 +207,11 @@ function applySpeedToVideo(video, speed) {
     }, 100)
   })
 
-  // 观察视频元素的属性变化
+  // 清理之前的观察器
+  if (video._srcObserver) {
+    video._srcObserver.disconnect()
+  }
+
   const srcObserver = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
       if (
@@ -147,9 +228,31 @@ function applySpeedToVideo(video, speed) {
     })
   })
 
+  // 保存观察器引用以便后续清理
+  video._srcObserver = srcObserver
+
   srcObserver.observe(video, {
     attributes: true,
     attributeFilter: ['src', 'currentSrc']
+  })
+
+  // 添加视频元素移除时的清理逻辑
+  const cleanupObserver = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      mutation.removedNodes.forEach((node) => {
+        if (node === video) {
+          if (video._srcObserver) {
+            video._srcObserver.disconnect()
+          }
+          cleanupObserver.disconnect()
+        }
+      })
+    })
+  })
+
+  cleanupObserver.observe(document.body, {
+    childList: true,
+    subtree: true
   })
 
   // 监听播放状态变化
@@ -161,17 +264,9 @@ function applySpeedToVideo(video, speed) {
     }, 100)
   })
 
-  // 修改事件监听列表，添加更多触发点
-  const events = [
-    'ratechange',
-    'seeking',
-    'loadeddata',
-    'loadedmetadata',
-    'canplay',
-    'play',
-    'playing'
-  ]
+  // 保存事件处理函数的引用
   events.forEach((eventName) => {
+    video[`_${eventName}Handler`] = video._speedHandler
     video.addEventListener(eventName, video._speedHandler)
   })
 }
@@ -216,32 +311,4 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     setTimeout(() => updateAllVideoSpeeds(currentSpeed), 100)
   }
-})
-
-// 添加消息监听器
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'getSpeed') {
-    // 返回当前视频速度
-    const video = document.querySelector('video')
-    sendResponse({ speed: video ? video.playbackRate : 1.0 })
-  } else if (request.action === 'setSpeed') {
-    // 更新当前速度
-    currentSpeed = request.speed
-    updateAllVideoSpeeds(currentSpeed)
-
-    // 如果是重置操作（速度为1.0），也要保存到storage
-    chrome.storage.local
-      .set({
-        [window.location.hostname]: currentSpeed // 保存当前域名对应的速度
-      })
-      .then(() => {
-        sendMessageToBackground({
-          action: 'speedUpdated',
-          speed: currentSpeed
-        })
-        sendResponse({ success: true })
-      })
-    return true
-  }
-  return true // 保持消息通道开启
 })
